@@ -722,7 +722,12 @@ struct st_h2o_context_t {
         /**
          * link-list of h2o_http1_conn_t
          */
-        h2o_linklist_t _conns;
+        h2o_linklist_t _active_conns;
+        /**
+         * link-list of h2o_http1_conn_t
+         */
+        h2o_linklist_t _inactive_conns;
+
         struct {
             uint64_t request_timeouts;
             uint64_t request_io_timeouts;
@@ -733,7 +738,12 @@ struct st_h2o_context_t {
         /**
          * link-list of h2o_http2_conn_t
          */
-        h2o_linklist_t _conns;
+        h2o_linklist_t _active_conns;
+        /**
+         * link-list of h2o_http2_conn_t
+         */
+        h2o_linklist_t _inactive_conns;
+
         /**
          * timeout entry used for graceful shutdown
          */
@@ -993,6 +1003,10 @@ typedef struct st_h2o_conn_callbacks_t {
      */
     h2o_http2_debug_state_t *(*get_debug_state)(h2o_req_t *req, int hpack_enabled);
     /**
+     * close connection if idle
+     */
+    int (*close_idle_connection)(h2o_conn_t *conn);
+    /**
      * returns number of requests inflight (optional, only supported by H2, H3)
      */
     uint32_t (*num_reqs_inflight)(h2o_conn_t *conn);
@@ -1072,6 +1086,8 @@ struct st_h2o_conn_t {
      * callbacks
      */
     const h2o_conn_callbacks_t *callbacks;
+    /* internal structure */
+    h2o_linklist_t _conns;
     /**
      * connection UUID (UUIDv4 in the string representation).
      */
@@ -1735,6 +1751,11 @@ void h2o_context_dispose_pathconf_context(h2o_context_t *ctx, h2o_pathconf_t *pa
 static h2o_timestamp_t h2o_get_timestamp(h2o_context_t *ctx, h2o_mem_pool_t *pool);
 void h2o_context_update_timestamp_string_cache(h2o_context_t *ctx);
 /**
+ * Closes at most @max_connections_to_close connections that have been inactive for @min_age seconds
+ * @return number of closed connections
+ */
+int h2o_context_close_idle_connections(h2o_context_t *ctx, int max_connections_to_close, int min_age);
+/**
  * returns per-module context set
  */
 static void *h2o_context_get_handler_context(h2o_context_t *ctx, h2o_handler_t *handler);
@@ -2342,6 +2363,7 @@ inline h2o_conn_t *h2o_create_connection(size_t sz, h2o_context_t *ctx, h2o_host
 #endif
     conn->callbacks = callbacks;
     conn->_uuid.is_initialized = 0;
+    conn->_conns = (h2o_linklist_t){};
 
     return conn;
 }
