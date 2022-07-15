@@ -1426,7 +1426,11 @@ static void proceed_handshake_picotls(h2o_socket_t *sock)
     ptls_buffer_t wbuf;
     ptls_buffer_init(&wbuf, "", 0);
 
-    int ret = ptls_handshake(sock->ssl->ptls, &wbuf, sock->ssl->input.encrypted->bytes, &consumed, NULL);
+    int ret;
+    do {
+        ret = ptls_handshake(sock->ssl->ptls, &wbuf, sock->ssl->input.encrypted->bytes, &consumed, NULL);
+    } while (ret == PTLS_ERROR_ASYNC_OPERATION);
+
     h2o_buffer_consume(&sock->ssl->input.encrypted, consumed);
 
     /* determine the next action */
@@ -1586,7 +1590,10 @@ static void proceed_handshake_undetermined(h2o_socket_t *sock)
     if (ptls == NULL)
         h2o_fatal("no memory");
     *ptls_get_data_ptr(ptls) = sock;
-    int ret = ptls_handshake(ptls, &wbuf, sock->ssl->input.encrypted->bytes, &consumed, NULL);
+    int ret;
+    do {
+        ret = ptls_handshake(ptls, &wbuf, sock->ssl->input.encrypted->bytes, &consumed, NULL);
+    } while (ret == PTLS_ERROR_ASYNC_OPERATION);
 
     if (ret == PTLS_ERROR_IN_PROGRESS && wbuf.off == 0) {
         /* we aren't sure if the picotls can process the handshake, retain handshake transcript and replay on next occasion */
