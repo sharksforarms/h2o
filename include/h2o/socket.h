@@ -44,7 +44,7 @@ extern "C" {
 #if H2O_USE_POLL || H2O_USE_EPOLL || H2O_USE_KQUEUE
 #define H2O_USE_LIBUV 0
 #else
-#define H2O_USE_LIBUV 1
+#define H2O_USE_LIBUV 0
 #endif
 #endif
 
