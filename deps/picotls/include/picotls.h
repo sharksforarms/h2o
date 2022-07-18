@@ -1452,6 +1452,8 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 
 /* inline functions */
 
+ptls_buffer_t *ptls_wbuf(ptls_t *tls);
+
 inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
     return is_server ? ptls_server_new(ctx) : ptls_client_new(ctx);

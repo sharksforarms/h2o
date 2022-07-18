@@ -184,6 +184,8 @@ struct st_ptls_t {
         ptls_buffer_t rec;
         ptls_buffer_t mess;
     } recvbuf;
+
+    ptls_buffer_t wbuf;
     /**
      * key schedule
      */
@@ -4426,6 +4428,7 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
     tls->is_server = is_server;
     tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
     tls->skip_tracing = ptls_default_skip_tracing;
+    ptls_buffer_init(&tls->wbuf, "", 0);
     return tls;
 }
 
@@ -4927,6 +4930,9 @@ static void init_record_message_emitter(ptls_t *tls, struct st_ptls_record_messa
         {sendbuf, &tls->traffic_protection.enc, 5, begin_record_message, commit_record_message}};
 }
 
+ptls_buffer_t *ptls_wbuf(ptls_t *tls) {
+    return &tls->wbuf;
+}
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *properties)
 {
     struct st_ptls_record_message_emitter_t emitter;

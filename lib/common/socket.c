@@ -1529,14 +1529,8 @@ static void do_ssl_async(h2o_socket_t *sock)
 static void proceed_handshake_picotls(h2o_socket_t *sock)
 {
     size_t consumed = sock->ssl->input.encrypted->size;
-    ptls_buffer_t wbuf;
-    ptls_buffer_init(&wbuf, "", 0);
 
-    int ret;
-    do {
-        ret = ptls_handshake(sock->ssl->ptls, &wbuf, sock->ssl->input.encrypted->bytes, &consumed, NULL);
-    } while (ret == PTLS_ERROR_ASYNC_OPERATION);
-
+    int ret = ptls_handshake(sock->ssl->ptls, ptls_wbuf(sock->ssl->ptls), sock->ssl->input.encrypted->bytes, &consumed, NULL);
     h2o_buffer_consume(&sock->ssl->input.encrypted, consumed);
 
     /* determine the next action */
@@ -1553,11 +1547,15 @@ static void proceed_handshake_picotls(h2o_socket_t *sock)
         break;
     }
 
+    if (ret == PTLS_ERROR_ASYNC_OPERATION) {
+        do_ssl_async(sock);
+        return;
+    }
     /* When something is to be sent, send it and then take the next action. If there's nothing to be sent and the handshake is still
      * in progress, wait for more bytes to arrive; otherwise, take the action immediately. */
-    if (wbuf.off != 0) {
+    if (ptls_wbuf(sock->ssl->ptls)->off != 0) {
         h2o_socket_read_stop(sock);
-        write_ssl_bytes(sock, wbuf.base, wbuf.off);
+        write_ssl_bytes(sock, ptls_wbuf(sock->ssl->ptls)->base, ptls_wbuf(sock->ssl->ptls)->off);
         flush_pending_ssl(sock, next_cb);
     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
         h2o_socket_read_start(sock, next_cb);
@@ -1565,7 +1563,7 @@ static void proceed_handshake_picotls(h2o_socket_t *sock)
         next_cb(sock, NULL);
     }
 
-    ptls_buffer_dispose(&wbuf);
+    ptls_buffer_dispose(ptls_wbuf(sock->ssl->ptls));
 }
 
 static void proceed_handshake_openssl(h2o_socket_t *sock)
@@ -1682,8 +1680,6 @@ static void proceed_handshake_undetermined(h2o_socket_t *sock)
     assert(ptls_ctx != NULL);
 
     size_t consumed = sock->ssl->input.encrypted->size;
-    ptls_buffer_t wbuf;
-    ptls_buffer_init(&wbuf, "", 0);
 
 #if PICOTLS_USE_DTRACE
     unsigned ptls_skip_tracing_backup = ptls_default_skip_tracing;
@@ -1696,12 +1692,9 @@ static void proceed_handshake_undetermined(h2o_socket_t *sock)
     if (ptls == NULL)
         h2o_fatal("no memory");
     *ptls_get_data_ptr(ptls) = sock;
-    int ret;
-    do {
-        ret = ptls_handshake(ptls, &wbuf, sock->ssl->input.encrypted->bytes, &consumed, NULL);
-    } while (ret == PTLS_ERROR_ASYNC_OPERATION);
+    int ret = ptls_handshake(ptls, ptls_wbuf(ptls), sock->ssl->input.encrypted->bytes, &consumed, NULL);
 
-    if (ret == PTLS_ERROR_IN_PROGRESS && wbuf.off == 0) {
+    if (ret == PTLS_ERROR_IN_PROGRESS && ptls_wbuf(ptls)->off == 0) {
         /* we aren't sure if the picotls can process the handshake, retain handshake transcript and replay on next occasion */
         ptls_free(ptls);
     } else if (ret == PTLS_ALERT_PROTOCOL_VERSION) {
@@ -1713,10 +1706,14 @@ static void proceed_handshake_undetermined(h2o_socket_t *sock)
         /* picotls is responsible for handling the handshake */
         sock->ssl->ptls = ptls;
         sock->ssl->handshake.server.async_resumption.state = ASYNC_RESUMPTION_STATE_COMPLETE;
+        if (ret == PTLS_ERROR_ASYNC_OPERATION) {
+            do_ssl_async(sock);
+            return;
+        }
         h2o_buffer_consume(&sock->ssl->input.encrypted, consumed);
         /* stop reading, send response */
         h2o_socket_read_stop(sock);
-        write_ssl_bytes(sock, wbuf.base, wbuf.off);
+        write_ssl_bytes(sock, ptls_wbuf(ptls)->base, ptls_wbuf(ptls)->off);
         h2o_socket_cb cb;
         switch (ret) {
         case 0:
@@ -1732,7 +1729,7 @@ static void proceed_handshake_undetermined(h2o_socket_t *sock)
         }
         flush_pending_ssl(sock, cb);
     }
-    ptls_buffer_dispose(&wbuf);
+    ptls_buffer_dispose(ptls_wbuf(ptls));
 }
 
 static void proceed_handshake(h2o_socket_t *sock, const char *err)
