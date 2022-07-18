@@ -695,8 +695,8 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
     }
 }
 
-static ASYNC_WAIT_CTX *waitctx;
-static ASYNC_JOB *job;
+static ASYNC_WAIT_CTX *waitctx = NULL;
+static ASYNC_JOB *job = NULL;
 
 struct sign_ctx {
     const struct st_ptls_openssl_signature_scheme_t *scheme;
@@ -704,6 +704,16 @@ struct sign_ctx {
     unsigned char *sigret;
     size_t siglen;
 };
+
+int ptls_openssl_get_async_fd()
+{
+    int fds[1];
+    size_t numfds;
+    ASYNC_WAIT_CTX_get_all_fds(waitctx, NULL, &numfds);
+    assert(numfds == 1);
+    ASYNC_WAIT_CTX_get_all_fds(waitctx, fds, &numfds);
+    return fds[0];
+}
 
 static int async_sign(void *vargs)
 {
@@ -796,11 +806,6 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
                     ret = PTLS_ERROR_LIBRARY;
                     goto Exit;
                 case ASYNC_PAUSE: {
-                    int fds[1];
-                    size_t numfds;
-                    ASYNC_WAIT_CTX_get_all_fds(waitctx, NULL, &numfds);
-                    assert(numfds == 1);
-                    ASYNC_WAIT_CTX_get_all_fds(waitctx, fds, &numfds);
                     ret = PTLS_ERROR_ASYNC_OPERATION;
                     return ret;
                 }
