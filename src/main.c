@@ -665,7 +665,7 @@ static void async_nb_job_handle_response(struct async_nb_transaction_t *transact
 }
 
 /*
- * Instantiates an async_nb_job_t. The caller should setup `job->buf` and call `async_nb_submit_request`.
+ * Instantiates an async_nb_job_t. The caller should setup `job->buf` and call `async_nb_job_submit`.
  */
 static struct async_nb_job_t *async_nb_job_new(void)
 {
