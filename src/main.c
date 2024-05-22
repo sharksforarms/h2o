@@ -329,6 +329,10 @@ static struct {
         h2o_sem_t semaphore;
         unsigned capacity;
     } ocsp_updater;
+    struct {
+        size_t worker_threads;
+        size_t max_events;
+    } neverbleed;
 #ifdef LIBCAP_FOUND
     H2O_VECTOR(cap_value_t) capabilities;
 #endif
@@ -356,6 +360,7 @@ static struct {
     .tcp_reuseport = 0,
     .ssl_zerocopy = 0,
     .ocsp_updater = {.capacity = H2O_DEFAULT_OCSP_UPDATER_MAX_THREADS},
+    .neverbleed = { .max_events = 5 },
 };
 
 static __thread size_t thread_index;
@@ -1585,7 +1590,7 @@ static int load_ssl_identity(h2o_configurator_command_t *cmd, SSL_CTX *ssl_ctx, 
         if (neverbleed == NULL) {
             neverbleed_post_fork_cb = on_neverbleed_fork;
             neverbleed = h2o_mem_alloc(sizeof(*neverbleed));
-            if (neverbleed_init(neverbleed, errbuf) != 0) {
+            if (neverbleed_init(neverbleed, conf.neverbleed.worker_threads, conf.neverbleed.max_events, errbuf) != 0) {
                 h2o_fatal("%s", errbuf);
             }
             neverbleed_transaction_cb = async_nb_transaction;
@@ -3376,6 +3381,30 @@ static int on_config_ssl_offload(h2o_configurator_command_t *cmd, h2o_configurat
     return 0;
 }
 
+static int on_config_neverbleed(h2o_configurator_command_t *cmd, h2o_configurator_context_t *ctx, yoml_t *node)
+{
+    yoml_t **worker_threads_node,  **max_events_node;
+
+    if (h2o_configurator_parse_mapping(cmd, node, NULL, "worker_threads:s,max_events:s", &worker_threads_node, &max_events_node) != 0)
+        return -1;
+
+    if (worker_threads_node) {
+        if (h2o_configurator_scanf(cmd, *worker_threads_node, "%zd", &conf.neverbleed.worker_threads) != 0)
+            return -1;
+        if (conf.neverbleed.worker_threads > NEVERBLEED_MAX_WORKER_THREADS) {
+            h2o_configurator_errprintf(cmd, *worker_threads_node, "max worker_threads is %d", NEVERBLEED_MAX_WORKER_THREADS);
+            return -1;
+        }
+    }
+
+    if (max_events_node) {
+        if (h2o_configurator_scanf(cmd, *max_events_node, "%zd", &conf.neverbleed.max_events) != 0)
+            return -1;
+    }
+
+    return 0;
+}
+
 static int on_config_neverbleed_offload(h2o_configurator_command_t *cmd, h2o_configurator_context_t *ctx, yoml_t *node)
 {
     switch (h2o_configurator_get_one_of(cmd, node, "OFF,QAT,QAT-AUTO")) {
@@ -4542,6 +4571,8 @@ static void setup_configurators(void)
         h2o_configurator_define_command(c, "tcp-reuseport", H2O_CONFIGURATOR_FLAG_GLOBAL, on_tcp_reuseport);
         h2o_configurator_define_command(c, "ssl-offload", H2O_CONFIGURATOR_FLAG_GLOBAL | H2O_CONFIGURATOR_FLAG_EXPECT_SCALAR,
                                         on_config_ssl_offload);
+        h2o_configurator_define_command(c, "neverbleed", H2O_CONFIGURATOR_FLAG_GLOBAL | H2O_CONFIGURATOR_FLAG_EXPECT_MAPPING,
+                                        on_config_neverbleed);
         h2o_configurator_define_command(c, "neverbleed-offload", H2O_CONFIGURATOR_FLAG_GLOBAL | H2O_CONFIGURATOR_FLAG_EXPECT_SCALAR,
                                         on_config_neverbleed_offload);
     }
@@ -4641,6 +4672,7 @@ int main(int argc, char **argv)
     h2o_vector_reserve(NULL, &conf.thread_map, num_procs);
     for (n = 0; n < num_procs; n++)
         conf.thread_map.entries[conf.thread_map.size++] = -1;
+    conf.neverbleed.worker_threads = num_procs;
     conf.quic.conn_callbacks = H2O_HTTP3_CONN_CALLBACKS;
     conf.quic.conn_callbacks.super.destroy_connection = on_http3_conn_destroy;
     conf.tfo_queues = H2O_DEFAULT_LENGTH_TCP_FASTOPEN_QUEUE;
