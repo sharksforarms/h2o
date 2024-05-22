@@ -277,7 +277,7 @@ This may take long depending on the TTL of the HTTPS / SVC DNS resource record a
 </p>
 The <code>ech</code> attribute must be set only in the first <code>ssl</code> attribute that binds to a particular address.
 </dd>
-<dt id="neverbleed">neverbleed:</dt>
+<dt id="listen-neverbleed">neverbleed:</dt>
 <dd>
 unless set to <code>OFF</code>, H2O isolates SSL private key operations to a different process by using <a href="https://github.com/h2o/neverbleed">Neverbleed</a>.
 Default is <code>ON</code>.
@@ -508,6 +508,30 @@ $ctx->{directive}->(
     default => 'max-reprocesses: 5',
     desc    => q{Limits the number of internal redirects.},
 )->(sub {});
+
+$ctx->{directive}->(
+    name    => "neverbleed",
+    levels  => [ qw(global) ],
+    desc    => q{neverbleed process settings},
+)->(sub {
+?>
+
+
+<dl>
+<dt>worker-threads</dt>
+<dd>number of threads spawned to handle neverbleed transactions
+<p>
+By default, the number of worker threads spawned is the number of the CPU cores connected to the system as obtained by <code>getconf NPROCESSORS_ONLN</code>.
+</p>
+</dd>
+<dt>max-events</dt>
+<dd>max number of events a worker thread should process in a single event loop
+<p>The default is 5 for this parameter.</p>
+</dd>
+</dl>
+
+<?
+});
 
 $ctx->{directive}->(
     name         => "neverbleed-offload",
